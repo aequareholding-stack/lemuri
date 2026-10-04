@@ -1,11 +1,11 @@
 # Lemuri – Plan der nächsten Aufträge
 
-Stand: 04.10.2026, nach LB-001 und den Entscheidungen des Operators vom selben Tag. Die Auftragsnummern vergibt der Operator; die Buchstaben hier dienen nur dem Verweis. Die Reihenfolge ist ein Vorschlag: A bis C müssen vor D bis G liegen, der Rest kann teilweise parallel laufen.
+Stand: 04.10.2026, nach LB-002. Die Auftragsnummern vergibt der Operator; die Buchstaben hier dienen nur dem Verweis. Die Reihenfolge ist ein Vorschlag: A bis C müssen vor D bis G liegen, der Rest kann teilweise parallel laufen.
 
 | Nr. (Operator) | Kurzname | Beschreibung |
 |---|---|---|
-| | **A – Supabase-Projekt und Migration** | Projekt in Frankfurt anlegen. Tabellen, Hilfsfunktionen, RLS-Regeln und Sichten aus `docs/datenmodell.md` als SQL-Migration schreiben. Themenkatalog Mathe Klasse 5 bis 10 als Startdaten einspielen. Löschjobs (`pg_cron`) anlegen. |
-| | **B – Eltern-Konto und Kind-Profil** | Registrierung und Anmeldung der Eltern (E-Mail + Passwort). Kind-Profil anlegen: Spitzname und Klassenstufe. Familiencode erzeugen und anzeigen, PIN je Kind setzen, Anmeldung des Kindes mit Familiencode + 4-stelliger PIN über eine Edge Function (Sperre nach 5 Fehlversuchen). Konto mit allen Daten und einzelne Profile löschen. Testphase von 30 Tagen beim Anlegen des Kontos starten, ohne Zahlungsmittel, eine je Eltern-E-Mail. |
+| LB-002 | **A – Supabase-Projekt und Migration** | Erledigt bis auf das Projekt selbst: Migrationen, RLS, Sichten, Themenkatalog und Löschlauf liegen im Repository. Offen: Projekt „lemuri“ in Frankfurt anlegen (wartet auf Jos Ja zu den Kosten), Migrationen und Seed einspielen, `pg_cron` einschalten, Edge Functions ausrollen, `LEMURI_KIND_GEHEIMNIS` setzen, E-Mail-Vorlagen für Bestätigung und Passwort-Reset auf Deutsch. |
+| LB-002 (Teil) | **B – Eltern-Konto und Kind-Profil** | Erledigt: Registrierung und Anmeldung der Eltern, Anmeldung des Kindes (Familiencode, Profilwahl, PIN, Sperre), Datenbankseite für Profil anlegen, PIN setzen, Konto löschen, Testphase. Offen für einen Folgeauftrag: Bildschirme für Eltern zum Anlegen der Kind-Profile, Anzeige des Familiencodes, PIN neu setzen, Profil und Konto löschen, Passwort vergessen. |
 | | **C – Design umsetzen** | Den Entwurf der fünf Bildschirme (Schrift, Farben, Karten, Chips, Chat-Blasen, Tab-Leiste, Dunkelmodus) als wiederverwendbare Komponenten bauen. Icon-Paket wählen. |
 | | **D – Aufgabe per Text** | Bildschirm „Aufgabe“: Text eingeben, Anliegen wählen („weiß nicht, wie ich anfange“ usw.). Aufgabe speichern, Thema automatisch zuordnen. |
 | | **E – Aufgabe per Foto** | Kamera und Bildauswahl. Bild an die Edge Function `aufgabe-auslesen` schicken, die Claude den Text aus dem Bild lesen lässt; Kind bestätigt („Stimmt so“ / „Neues Foto“). Bild wird nirgends gespeichert. Ein eigener Auslese-Dienst bleibt später möglich. |
@@ -37,4 +37,27 @@ Stand: 04.10.2026, nach LB-001 und den Entscheidungen des Operators vom selben T
 
 ## Offene Fragen
 
-Derzeit keine. Neue Fragen kommen mit dem jeweiligen Auftrag.
+Diese Fragen entscheidet der Operator. Zu jeder Frage stehen Antwortmöglichkeiten und eine Empfehlung.
+
+1. **Welche Domain für die künstlichen Kind-Adressen?** Jeder Kind-Benutzer braucht in Supabase Auth eine E-Mail-Adresse. Es wird nie eine E-Mail dorthin geschickt, aber die Domain sollte Lemuri gehören, damit niemand Fremdes Post bekommen könnte.
+   - a) `kind.lemuri.app`, wenn `lemuri.app` registriert ist oder wird (so im Code vorbelegt).
+   - b) Eine andere Domain, die schon im Besitz ist.
+   - **Empfehlung: a**, die Domain wird später ohnehin für Web-App und Absender-Adresse gebraucht.
+
+2. **Wie lange bleibt der E-Mail-Hash für „eine Testphase je E-Mail“ gespeichert?** Er überlebt die Kontolöschung, sonst ließe sich die Testphase durch Löschen und Neuanlegen wiederholen.
+   - a) Unbegrenzt. b) 24 Monate. c) 12 Monate.
+   - **Empfehlung: b**, 24 Monate: lang genug gegen Missbrauch, trotzdem eine feste Frist für die Datenschutzerklärung.
+
+3. **Müssen Eltern ihre E-Mail bestätigen, bevor sie sich anmelden können?**
+   - a) Ja, Bestätigungslink zuerst (Supabase-Standard, so eingestellt).
+   - b) Nein, sofort nutzbar, Bestätigung später.
+   - **Empfehlung: a**, weil Familiencode und Kinderdaten an diese Adresse hängen.
+
+4. **Wer darf in das Supabase-Dashboard?** Das Dashboard arbeitet mit vollen Rechten und könnte Gesprächsinhalte lesen; die Datenbankrolle `betreiber` schützt nur eine künftige eigene Betreiber-Oberfläche.
+   - a) Nur Jo, mit Zwei-Faktor-Anmeldung; alle anderen bekommen später die Betreiber-Oberfläche.
+   - b) Jo und Timo mit Zwei-Faktor-Anmeldung.
+   - **Empfehlung: a** für den Start, Zugriffe im Dashboard-Protokoll nachvollziehbar.
+
+5. **Mindestlänge des Eltern-Passworts?**
+   - a) 8 Zeichen (so in der App vorgesehen). b) 12 Zeichen. c) 6 Zeichen (Supabase-Standard).
+   - **Empfehlung: a**, im Supabase-Projekt auf 8 setzen, damit App und Server übereinstimmen.

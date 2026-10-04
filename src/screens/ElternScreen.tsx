@@ -7,6 +7,7 @@ export function ElternScreen() {
       titel="Eltern-Übersicht"
       beschreibung="Hier sehen Eltern später Lernzeit und Themen mit Stand („verstanden“ oder „übt noch“) und stellen Tageslimit und Lernpause ein."
       hinweis="Was das Kind mit Lemuri schreibt, sehen nur das Kind und Lemuri. Eltern sehen Lernzeit und Themen."
+      mitAbmelden
     />
   );
 }

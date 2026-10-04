@@ -1,6 +1,6 @@
 # Lemuri – Datenmodell (Plan)
 
-Stand: 04.10.2026, Auftrag LB-001, mit den Entscheidungen des Operators vom selben Tag eingearbeitet. Dies ist ein Plan, noch keine Migration. Das Supabase-Projekt wird in einem späteren Auftrag angelegt (Region Frankfurt, `eu-central-1`).
+Stand: 04.10.2026, Auftrag LB-002. Umgesetzt als Migrationen in `supabase/migrations/`, geprüft durch `npm run test:db`. Abschnitt 9 beschreibt die Umsetzung. Das Supabase-Projekt wird in einem späteren Auftrag angelegt (Region Frankfurt, `eu-central-1`).
 
 ## 1. Grundsätze
 
@@ -19,7 +19,8 @@ Stand: 04.10.2026, Auftrag LB-001, mit den Entscheidungen des Operators vom selb
 |---|---|---|
 | Eltern | Supabase Auth, E-Mail + Passwort (oder Magic Link) | `auth.uid()` = `eltern_konto.id` |
 | Kind | Supabase Auth, eigener Benutzer ohne E-Mail, angelegt von den Eltern. Anmeldung: Familiencode (steht im Eltern-Konto) + PIN des Kindes, geprüft von einer Edge Function, die dann die Sitzung des Kind-Benutzers ausstellt | `auth.uid()` = `kind_profil.auth_user_id` |
-| Server (Lemuri-Dienst) | Edge Functions mit Service-Rolle | umgeht RLS; schreibt KI-Antworten, Themenstand, Abo-Status |
+| Server (Lemuri-Dienst) | Edge Functions mit Service-Rolle | umgeht RLS; schreibt KI-Antworten, Themenstand, Abo-Status; einziger Zugang zu PIN-Daten |
+| Betreiber-Oberfläche | Datenbankrolle `betreiber` | sieht nur Themenkatalog und Zähler (`betreiber_kennzahlen`), keine Inhalte und keine Profile |
 
 Alle Tabellen haben RLS eingeschaltet. Ohne passende Regel ist nichts lesbar.
 
@@ -59,17 +60,27 @@ E-Mail und Passwort liegen bei Supabase Auth, nicht in dieser Tabelle.
 |---|---|---|
 | id | uuid, PK | |
 | eltern_id | uuid, FK → eltern_konto | |
-| auth_user_id | uuid, FK → auth.users, eindeutig | eigener Anmelde-Benutzer des Kindes (ohne E-Mail) |
+| auth_user_id | uuid, FK → auth.users, eindeutig | eigener Anmelde-Benutzer des Kindes. Er hat eine künstliche Adresse `kind-<id>@kind.lemuri.app`, an die nie eine E-Mail geht, und ein Passwort, das nur der Server aus einem Geheimnis ableitet. Die PIN ist nie das Passwort |
 | spitzname | text | Vorname oder Spitzname, höchstens 30 Zeichen |
 | klassenstufe | smallint | 5 bis 10 |
-| pin_hash | text | gesalzener Hash der 4-stelligen PIN; nur der Server liest und schreibt ihn, keine RLS-Regel gibt ihn heraus |
-| pin_fehlversuche | smallint | Zähler; nach 5 Fehlversuchen ist das Profil gesperrt, bis die Eltern eine neue PIN setzen |
-| gesperrt_am | timestamptz, optional | gesetzt bei PIN-Sperre oder wenn das Abo weniger Profile erlaubt als vorhanden (Eltern wählen das aktive Profil, die anderen werden gesperrt, nicht gelöscht) |
+| inaktiv_seit | timestamptz, optional | gesetzt, wenn das Abo weniger Profile erlaubt als vorhanden: Eltern wählen das aktive Profil, die anderen werden gesperrt, nicht gelöscht |
 | erstellt_am | timestamptz | |
 
 Bewusst **nicht** vorhanden: Geburtsdatum, Schule, Adresse, Geschlecht, Foto, E-Mail.
 
-**RLS:** Eltern lesen, anlegen, ändern und löschen Profile mit `eltern_id = auth.uid()`. Die Anzahl ist durch das Abo begrenzt (1 oder 3), geprüft in einer Datenbank-Funktion beim Anlegen. Das Kind liest nur die eigene Zeile (`auth_user_id = auth.uid()`), ändert nichts. `pin_hash` und `pin_fehlversuche` sind über eine Spaltenbeschränkung für Eltern und Kind unsichtbar; die PIN setzen die Eltern über eine Edge Function.
+**RLS:** Eltern lesen, anlegen, ändern und löschen Profile mit `eltern_id = auth.uid()`. Die Anzahl ist durch das Abo begrenzt (1 oder 3), geprüft in einer Datenbank-Funktion beim Anlegen. Anlegen geht nur über die Edge Function `kind-profil-anlegen`, weil zuerst der Anmelde-Benutzer entstehen muss. Das Kind liest nur die eigene Zeile (`auth_user_id = auth.uid()`), ändert nichts.
+
+### 3.2a `kind_pin` – PIN-Daten (nur Server)
+
+| Feld | Typ | Beschreibung |
+|---|---|---|
+| kind_id | uuid, PK, FK → kind_profil | |
+| pin_hash | text | bcrypt-Hash der 4-stelligen PIN |
+| fehlversuche | smallint | Zähler, bei richtiger PIN zurück auf 0 |
+| gesperrt_am | timestamptz, optional | gesetzt beim fünften Fehlversuch; bleibt, bis die Eltern eine neue PIN setzen |
+| aktualisiert_am | timestamptz | |
+
+**RLS:** Keine einzige Regel und keine Rechte für `authenticated` oder `anon`. Nur der Server (Edge Functions `kind-anmelden`, `kind-pin-setzen`) liest und schreibt über die Funktionen `kind_anmeldung_pruefen` und `kind_pin_setzen`. Die App kann diese Funktionen nicht direkt aufrufen (Test „App kann PIN-Prüfung nicht direkt aufrufen“).
 
 ### 3.3 `thema` – Themenkatalog (keine Kinderdaten)
 
@@ -223,7 +234,7 @@ Regel (vorläufig): `verstanden`, sobald eine Prüfaufgabe zum Thema richtig gel
 | gekuendigt_am | timestamptz, optional | |
 | erstellt_am | timestamptz | |
 
-Zahlungsdaten (Karte, Konto) liegen nie bei Lemuri, nur beim Anbieter. Jedes Eltern-Konto hat genau eine Abo-Zeile; sie entsteht mit dem Konto im Status `testphase`. In der Testphase gilt die Grenze des Familien-Plans (bis zu drei Kinder). Erlaubt das gebuchte Abo weniger Profile als vorhanden, wählen die Eltern das aktive Profil; die anderen bekommen `gesperrt_am` und bleiben mit allen Daten erhalten. Nach Ablauf ohne Abschluss: Status `abgelaufen`, das Kind kann keine neue Aufgabe beginnen, Eltern sehen weiter ihre Übersicht, nichts wird gelöscht.
+Zahlungsdaten (Karte, Konto) liegen nie bei Lemuri, nur beim Anbieter. Jedes Eltern-Konto hat genau eine Abo-Zeile; sie entsteht mit dem Konto im Status `testphase`. Damit es nur eine Testphase je Eltern-E-Mail gibt, merkt sich die Tabelle `testphase_verbraucht` einen SHA-256-Hash der E-Mail (keine Klartext-Adresse). Ein zweites Konto mit derselben E-Mail startet im Status `abgelaufen`. In der Testphase gilt die Grenze des Familien-Plans (bis zu drei Kinder). Erlaubt das gebuchte Abo weniger Profile als vorhanden, wählen die Eltern das aktive Profil; die anderen bekommen `gesperrt_am` und bleiben mit allen Daten erhalten. Nach Ablauf ohne Abschluss: Status `abgelaufen`, das Kind kann keine neue Aufgabe beginnen, Eltern sehen weiter ihre Übersicht, nichts wird gelöscht.
 
 **RLS:** Eltern lesen das eigene Abo. Schreiben nur der Server (über Webhooks der Anbieter). Kinder: kein Zugriff.
 
@@ -241,7 +252,7 @@ Beide Sichten laufen mit den RLS-Regeln des aufrufenden Benutzers (`security inv
 | Feld / Tabelle | Wann gelöscht |
 |---|---|
 | Foto der Aufgabe | wird nie gespeichert; die Edge Function reicht es an das KI-Modell weiter und verwirft es sofort nach der Antwort, keine Kopie in Supabase Storage, kein Ablegen beim Anbieter |
-| `kind_profil.spitzname`, `klassenstufe`, `pin_hash` | sofort, wenn Eltern das Profil löschen oder das Konto löschen. Keine automatische Löschung bei ruhenden Konten (Entscheidung des Operators); Eltern können jederzeit selbst löschen |
+| `kind_profil.spitzname`, `klassenstufe` und `kind_pin` | sofort, wenn Eltern das Profil löschen oder das Konto löschen (Funktion `konto_loeschen`). Keine automatische Löschung bei ruhenden Konten (Entscheidung des Operators); Eltern können jederzeit selbst löschen |
 | Anmelde-Benutzer des Kindes (`auth.users`) | zusammen mit dem Profil |
 | `aufgabe.aufgabentext`, `anliegen` | 90 Tage nach `erledigt_am` (bzw. nach `erstellt_am`, wenn nie erledigt); sofort mit dem Profil |
 | `gespraech`, `gespraech_nachricht.inhalt`, `hinweis` | 90 Tage nach `beendet_am` (bzw. `gestartet_am`); sofort mit dem Profil. Nach dem Löschen bleiben nur die Zähler in `kind_thema_stand` |
@@ -250,6 +261,7 @@ Beide Sichten laufen mit den RLS-Regeln des aufrufenden Benutzers (`security inv
 | `lernzeit_tag` | 12 Monate nach `datum`; sofort mit dem Profil |
 | `kind_thema_stand` | sofort mit dem Profil |
 | `elterneinstellungen` | sofort mit dem Profil |
+| `testphase_verbraucht.email_hash` | bleibt nach der Kontolöschung, damit dieselbe E-Mail keine zweite Testphase bekommt (Hash, kein Klartext). Wie lange, ist eine offene Frage in `docs/plan.md` |
 | `eltern_konto` (mit `familiencode`), `abo` | sofort bei Kontolöschung; Abrechnungsbelege beim Zahlungsanbieter bleiben so lange, wie es das Steuerrecht verlangt (keine Kinderdaten darin) |
 | Daten beim KI-Anbieter | Gesprächstexte und Fotos gehen an Claude über einen Cloud-Anbieter mit EU-Standort; dort keine Speicherung über die Anfrage hinaus und keine Verwendung zum Training (Vertragsbedingung, im Auftrag „Datenschutz“ zu prüfen) |
 | Server-Protokolle (Logs) | enthalten keine Gesprächsinhalte und keine Spitznamen, nur IDs; 30 Tage |
@@ -261,7 +273,8 @@ Die „sofort“-Löschungen laufen über `on delete cascade` an den Fremdschlü
 | Tabelle | Kind | Eltern | Server |
 |---|---|---|---|
 | eltern_konto | – | eigene Zeile: lesen, ändern | alles |
-| kind_profil | eigene Zeile: lesen | eigene Kinder: lesen, anlegen, ändern, löschen | alles |
+| kind_profil | eigene Zeile: lesen | eigene Kinder: lesen, ändern, löschen (anlegen über den Server) | alles |
+| kind_pin | – | – | alles |
 | thema | lesen | lesen | alles |
 | aufgabe | eigene: lesen, anlegen, ändern | – | alles |
 | gespraech | eigene: lesen, anlegen | – | alles |
@@ -273,6 +286,9 @@ Die „sofort“-Löschungen laufen über `on delete cascade` an den Fremdschlü
 | lernzeit_tag | eigene: lesen | eigene Kinder: lesen | alles |
 | elterneinstellungen | eigene Zeile: lesen | eigene Kinder: lesen, ändern | alles |
 | abo | – | eigenes: lesen | alles |
+| testphase_verbraucht | – | – | alles |
+
+Die Betreiber-Rolle hat auf keine dieser Tabellen Rechte, nur auf `thema` und die Sicht `betreiber_kennzahlen`. Nicht angemeldete Benutzer (`anon`) haben gar keine Rechte.
 
 Beispiel einer Regel in SQL:
 
@@ -306,3 +322,19 @@ create policy "kind schreibt eigene nachrichten"
 ## 8. Anbindung des KI-Modells (austauschbar)
 
 Die App ruft nie den KI-Anbieter direkt auf, sondern immer eine Edge Function in Supabase (`gespraech-antwort`, `aufgabe-auslesen`). Darin steckt eine kleine Schnittstelle mit zwei Funktionen: `antwortErzeugen(nachrichten)` und `textAusBild(bild)`. Dahinter liegt je Anbieter eine Umsetzung. Zuerst: Claude Sonnet über Amazon Bedrock in der Region Frankfurt. Vor dem KI-Auftrag wird geprüft, ob die gewünschte Sonnet-Version dort freigeschaltet ist; sonst Google Vertex AI in einer EU-Region. Welche Umsetzung läuft, entscheidet eine Umgebungsvariable. So lässt sich der Anbieter wechseln, ohne App oder Datenmodell anzufassen. Der Anbieter wird in keiner Tabelle gespeichert.
+
+## 9. Umsetzung (LB-002)
+
+| Datei | Inhalt |
+|---|---|
+| `supabase/migrations/20261004150000_grundgeruest.sql` | Erweiterung pgcrypto, alle Tabellen und Indizes, Hilfsfunktionen `ist_kind`, `ist_eltern_von`, Sicht `betreiber_kennzahlen` |
+| `supabase/migrations/20261004150100_zugriffsregeln.sql` | Rechte je Rolle, RLS auf jeder Tabelle, alle Regeln, Eltern-Sichten `eltern_lernzeit_woche` und `eltern_themen`, Rolle `betreiber` |
+| `supabase/migrations/20261004150200_anmeldung.sql` | Familiencode, Trigger für neue Auth-Benutzer (Konto + Abo in Testphase), Profilgrenze, `kind_profil_anlegen`, `familie_profile`, `kind_anmeldung_pruefen` (Sperre nach fünf Fehlversuchen), `kind_pin_setzen`, `konto_loeschen` |
+| `supabase/migrations/20261004150300_loeschlauf.sql` | Funktion `loeschlauf` (90 Tage Gespräche und Aufgaben, 7 Tage Sitzungen, 12 Monate Tagessummen), täglicher Lauf über pg_cron, falls eingeschaltet |
+| `supabase/seed.sql` | Themenkatalog Mathe Klasse 5 bis 10 |
+| `supabase/functions/kind-anmelden` | Profile zum Familiencode liefern, PIN prüfen, Sitzung des Kind-Benutzers ausstellen |
+| `supabase/functions/kind-profil-anlegen` | Eltern legen ein Kind-Profil an (Auth-Benutzer + Profil + PIN) |
+| `supabase/functions/kind-pin-setzen` | Eltern setzen eine neue PIN, Sperre wird aufgehoben |
+| `supabase/tests/` | Nachbildung der Supabase-Umgebung für ein normales PostgreSQL und die Schutz-Tests |
+
+Geheimnisse: Die Edge Functions brauchen neben den von Supabase gesetzten Schlüsseln die Umgebungsvariable `LEMURI_KIND_GEHEIMNIS` (Zufallswert, mindestens 32 Zeichen). Sie wird im Supabase-Dashboard hinterlegt, nie im Repository.

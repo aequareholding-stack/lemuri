@@ -1,0 +1,14 @@
+# Supabase-Projekt Lemuri. Wird in Auftrag LB-002 angelegt, Region eu-central-1.
+project_id = "lemuri"
+
+[db]
+major_version = 17
+
+[auth]
+enable_signup = true
+enable_anonymous_sign_ins = false
+
+[auth.email]
+enable_signup = true
+enable_confirmations = true
+double_confirm_changes = true
