@@ -1,6 +1,6 @@
 # Lemuri – Datenmodell (Plan)
 
-Stand: 04.10.2026, Auftrag LB-001. Dies ist ein Plan, noch keine Migration. Das Supabase-Projekt wird in einem späteren Auftrag angelegt (Region Frankfurt, `eu-central-1`).
+Stand: 04.10.2026, Auftrag LB-001, mit den Entscheidungen des Operators vom selben Tag eingearbeitet. Dies ist ein Plan, noch keine Migration. Das Supabase-Projekt wird in einem späteren Auftrag angelegt (Region Frankfurt, `eu-central-1`).
 
 ## 1. Grundsätze
 
@@ -9,14 +9,16 @@ Stand: 04.10.2026, Auftrag LB-001. Dies ist ein Plan, noch keine Migration. Das 
 3. **Vom Kind nur das Nötigste.** Gespeichert werden Vorname oder Spitzname und Klassenstufe. Kein Geburtsdatum, keine Schule, keine Adresse, keine E-Mail des Kindes.
 4. **Fotos werden nie gespeichert.** Das Foto wird nur zum Auslesen des Aufgabentexts verwendet und danach sofort verworfen. In der Datenbank landet nur der Text.
 5. **Jedes Feld mit Kinderdaten hat eine Löschregel** (Abschnitt 5).
-6. **Zugriff wird in der Datenbank erzwungen** (Row Level Security), nicht nur in der App. Dafür muss das Kind eine eigene Anmelde-Identität haben (siehe offene Frage 1 im Bericht).
+6. **Zugriff wird in der Datenbank erzwungen** (Row Level Security), nicht nur in der App. Dafür hat das Kind eine eigene Anmelde-Identität (Entscheidung: Familiencode + PIN).
+7. **Nichts wird automatisch gelöscht, nur weil ein Konto ruht.** Eltern können ihr Konto und alle Daten jederzeit selbst löschen. Zeitgesteuert gelöscht werden nur Gesprächsinhalte (90 Tage) und kurzlebige Rohdaten.
+8. **Der KI-Anbieter bleibt austauschbar.** Claude läuft über einen Cloud-Anbieter mit EU-Standort; die App spricht nie direkt mit dem Anbieter, sondern mit einer eigenen Edge Function, hinter der der Anbieter gewechselt werden kann.
 
 ## 2. Wer ist wer (Rollen)
 
 | Rolle | Anmeldung | Erkennbar an |
 |---|---|---|
 | Eltern | Supabase Auth, E-Mail + Passwort (oder Magic Link) | `auth.uid()` = `eltern_konto.id` |
-| Kind | Supabase Auth, eigener Benutzer ohne E-Mail, angelegt von den Eltern; Anmeldung per Familiencode + PIN | `auth.uid()` = `kind_profil.auth_user_id` |
+| Kind | Supabase Auth, eigener Benutzer ohne E-Mail, angelegt von den Eltern. Anmeldung: Familiencode (steht im Eltern-Konto) + PIN des Kindes, geprüft von einer Edge Function, die dann die Sitzung des Kind-Benutzers ausstellt | `auth.uid()` = `kind_profil.auth_user_id` |
 | Server (Lemuri-Dienst) | Edge Functions mit Service-Rolle | umgeht RLS; schreibt KI-Antworten, Themenstand, Abo-Status |
 
 Alle Tabellen haben RLS eingeschaltet. Ohne passende Regel ist nichts lesbar.
@@ -43,6 +45,7 @@ Konventionen: alle IDs sind `uuid`, Zeitstempel sind `timestamptz`, Tabellen- un
 |---|---|---|
 | id | uuid, PK | gleich `auth.users.id` |
 | anzeige_name | text, optional | wie die Eltern angesprochen werden möchten |
+| familiencode | text, eindeutig | vom Server erzeugter Code (z. B. 8 Zeichen, ohne verwechselbare Zeichen), mit dem sich die Kinder anmelden; Eltern können ihn neu erzeugen lassen |
 | erstellt_am | timestamptz | |
 | geloescht_am | timestamptz, optional | gesetzt, wenn die Löschung angestoßen wurde |
 
@@ -59,11 +62,13 @@ E-Mail und Passwort liegen bei Supabase Auth, nicht in dieser Tabelle.
 | auth_user_id | uuid, FK → auth.users, eindeutig | eigener Anmelde-Benutzer des Kindes (ohne E-Mail) |
 | spitzname | text | Vorname oder Spitzname, höchstens 30 Zeichen |
 | klassenstufe | smallint | 5 bis 10 |
+| pin_hash | text | gesalzener Hash der PIN; nur der Server liest und schreibt ihn, keine RLS-Regel gibt ihn heraus |
+| pin_fehlversuche | smallint | Zähler; nach 5 Fehlversuchen ist die Anmeldung 15 Minuten gesperrt |
 | erstellt_am | timestamptz | |
 
 Bewusst **nicht** vorhanden: Geburtsdatum, Schule, Adresse, Geschlecht, Foto, E-Mail.
 
-**RLS:** Eltern lesen, anlegen, ändern und löschen Profile mit `eltern_id = auth.uid()`. Die Anzahl ist durch das Abo begrenzt (1 oder 3), geprüft in einer Datenbank-Funktion beim Anlegen. Das Kind liest nur die eigene Zeile (`auth_user_id = auth.uid()`), ändert nichts.
+**RLS:** Eltern lesen, anlegen, ändern und löschen Profile mit `eltern_id = auth.uid()`. Die Anzahl ist durch das Abo begrenzt (1 oder 3), geprüft in einer Datenbank-Funktion beim Anlegen. Das Kind liest nur die eigene Zeile (`auth_user_id = auth.uid()`), ändert nichts. `pin_hash` und `pin_fehlversuche` sind über eine Spaltenbeschränkung für Eltern und Kind unsichtbar; die PIN setzen die Eltern über eine Edge Function.
 
 ### 3.3 `thema` – Themenkatalog (keine Kinderdaten)
 
@@ -87,7 +92,7 @@ Bewusst **nicht** vorhanden: Geburtsdatum, Schule, Adresse, Geschlecht, Foto, E-
 | fach | text | |
 | thema_id | uuid, FK → thema, optional | vom Server zugeordnet |
 | aufgabentext | text | der ausgelesene oder getippte Text; **Kinderdaten** |
-| eingabeart | text | `text` oder `foto` (nur die Art, nie das Bild) |
+| eingabeart | text | `text` oder `foto` (nur die Art, nie das Bild). Beim Foto liest das KI-Modell den Text direkt aus dem Bild; das Bild geht nur an die Edge Function und von dort an den KI-Anbieter, wird nirgends abgelegt |
 | anliegen | text, optional | `anfang`, `mittendrin`, `pruefen` – was das Kind braucht |
 | erstellt_am | timestamptz | |
 | erledigt_am | timestamptz, optional | |
@@ -209,14 +214,15 @@ Regel (vorläufig): `verstanden`, sobald eine Prüfaufgabe zum Thema richtig gel
 | eltern_id | uuid, FK → eltern_konto | |
 | plan | text | `einzel` (ein Kind, 9,99 Euro im Monat) oder `familie` (bis zu drei Kinder, 14,99 Euro im Monat) |
 | preis_cent | integer | 999 oder 1499, zum Zeitpunkt des Abschlusses |
-| status | text | `aktiv`, `gekuendigt` (läuft bis gueltig_bis), `abgelaufen` |
-| anbieter | text | `apple`, `google` oder `stripe` |
-| anbieter_referenz | text | Transaktions- bzw. Kunden-ID beim Anbieter |
-| gueltig_bis | timestamptz | |
+| status | text | `testphase` (30 Tage kostenlos ab Konto-Anlage), `aktiv`, `gekuendigt` (läuft bis gueltig_bis), `abgelaufen` |
+| anbieter | text, optional | `apple` oder `google`; leer in der Testphase. Zahlung im Browser kommt in einem späteren Auftrag dazu |
+| anbieter_referenz | text, optional | Transaktions- bzw. Kunden-ID beim Anbieter |
+| testphase_bis | timestamptz | Konto-Anlage plus 30 Tage |
+| gueltig_bis | timestamptz | in der Testphase gleich testphase_bis |
 | gekuendigt_am | timestamptz, optional | |
 | erstellt_am | timestamptz | |
 
-Zahlungsdaten (Karte, Konto) liegen nie bei Lemuri, nur beim Anbieter.
+Zahlungsdaten (Karte, Konto) liegen nie bei Lemuri, nur beim Anbieter. Jedes Eltern-Konto hat genau eine Abo-Zeile; sie entsteht mit dem Konto im Status `testphase`. In der Testphase gilt die Grenze des Familien-Plans (bis zu drei Kinder). Nach Ablauf ohne Abschluss: Status `abgelaufen`, das Kind kann keine neue Aufgabe beginnen, Eltern sehen weiter ihre Übersicht, nichts wird gelöscht.
 
 **RLS:** Eltern lesen das eigene Abo. Schreiben nur der Server (über Webhooks der Anbieter). Kinder: kein Zugriff.
 
@@ -233,8 +239,8 @@ Beide Sichten laufen mit den RLS-Regeln des aufrufenden Benutzers (`security inv
 
 | Feld / Tabelle | Wann gelöscht |
 |---|---|
-| Foto der Aufgabe | wird nie gespeichert; nach dem Auslesen sofort aus dem Arbeitsspeicher verworfen, keine Kopie in Supabase Storage |
-| `kind_profil.spitzname`, `klassenstufe` | sofort, wenn Eltern das Profil löschen oder das Konto löschen; außerdem automatisch 12 Monate nach Abo-Ende ohne Anmeldung (Eltern werden 30 Tage vorher per E-Mail informiert) |
+| Foto der Aufgabe | wird nie gespeichert; die Edge Function reicht es an das KI-Modell weiter und verwirft es sofort nach der Antwort, keine Kopie in Supabase Storage, kein Ablegen beim Anbieter |
+| `kind_profil.spitzname`, `klassenstufe`, `pin_hash` | sofort, wenn Eltern das Profil löschen oder das Konto löschen. Keine automatische Löschung bei ruhenden Konten (Entscheidung des Operators); Eltern können jederzeit selbst löschen |
 | Anmelde-Benutzer des Kindes (`auth.users`) | zusammen mit dem Profil |
 | `aufgabe.aufgabentext`, `anliegen` | 90 Tage nach `erledigt_am` (bzw. nach `erstellt_am`, wenn nie erledigt); sofort mit dem Profil |
 | `gespraech`, `gespraech_nachricht.inhalt`, `hinweis` | 90 Tage nach `beendet_am` (bzw. `gestartet_am`); sofort mit dem Profil. Nach dem Löschen bleiben nur die Zähler in `kind_thema_stand` |
@@ -243,8 +249,8 @@ Beide Sichten laufen mit den RLS-Regeln des aufrufenden Benutzers (`security inv
 | `lernzeit_tag` | 12 Monate nach `datum`; sofort mit dem Profil |
 | `kind_thema_stand` | sofort mit dem Profil |
 | `elterneinstellungen` | sofort mit dem Profil |
-| `eltern_konto`, `abo` | sofort bei Kontolöschung; Abrechnungsbelege beim Zahlungsanbieter bleiben so lange, wie es das Steuerrecht verlangt (keine Kinderdaten darin) |
-| Daten beim KI-Anbieter | Gesprächstexte gehen zum Modell und dürfen dort nicht zum Training verwendet und nicht dauerhaft gespeichert werden (Vertragsklausel, siehe offene Frage im Bericht) |
+| `eltern_konto` (mit `familiencode`), `abo` | sofort bei Kontolöschung; Abrechnungsbelege beim Zahlungsanbieter bleiben so lange, wie es das Steuerrecht verlangt (keine Kinderdaten darin) |
+| Daten beim KI-Anbieter | Gesprächstexte und Fotos gehen an Claude über einen Cloud-Anbieter mit EU-Standort; dort keine Speicherung über die Anfrage hinaus und keine Verwendung zum Training (Vertragsbedingung, im Auftrag „Datenschutz“ zu prüfen) |
 | Server-Protokolle (Logs) | enthalten keine Gesprächsinhalte und keine Spitznamen, nur IDs; 30 Tage |
 
 Die „sofort“-Löschungen laufen über `on delete cascade` an den Fremdschlüsseln. Die zeitgesteuerten Löschungen laufen täglich als Datenbank-Job (`pg_cron`).
@@ -283,6 +289,18 @@ create policy "kind schreibt eigene nachrichten"
 -- Keine Regel für Eltern: damit ist die Tabelle für sie unsichtbar.
 ```
 
-## 7. Noch nicht entschieden
+## 7. Entschieden am 04.10.2026
 
-Siehe „Offene Fragen“ im Bericht zu LB-001 und in `docs/plan.md`: Anmeldung des Kindes, Aufbewahrungsfrist der Gespräche, Weg des Fotos zum Auslesen, Standort des KI-Anbieters, Abo-Abwicklung, Löschfrist inaktiver Konten.
+| Thema | Entscheidung | Wo im Modell |
+|---|---|---|
+| Anmeldung Kind | eigener Benutzer, Familiencode + PIN | 2, 3.1, 3.2 |
+| Aufbewahrung Gespräche | 90 Tage nach Gesprächsende | 5 |
+| Foto auslesen | direkt mit Claude, eigener Dienst später möglich | 3.4, 5 |
+| KI-Modell | Claude über Cloud-Anbieter mit EU-Standort, Anbieter austauschbar | 1.8, 5, 8 |
+| Abo | erst Apple und Google, Browser später | 3.12 |
+| Inaktive Konten | keine automatische Löschung, Eltern löschen selbst | 1.7, 5 |
+| Testphase | 30 Tage kostenlos | 3.12 |
+
+## 8. Anbindung des KI-Modells (austauschbar)
+
+Die App ruft nie den KI-Anbieter direkt auf, sondern immer eine Edge Function in Supabase (`gespraech-antwort`, `aufgabe-auslesen`). Darin steckt eine kleine Schnittstelle mit zwei Funktionen: `antwortErzeugen(nachrichten)` und `textAusBild(bild)`. Dahinter liegt je Anbieter eine Umsetzung (zuerst: Claude Sonnet über einen EU-Cloud-Anbieter). Welche Umsetzung läuft, entscheidet eine Umgebungsvariable. So lässt sich der Anbieter wechseln, ohne App oder Datenmodell anzufassen. Der Anbieter wird in keiner Tabelle gespeichert.
