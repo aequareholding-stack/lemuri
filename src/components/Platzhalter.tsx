@@ -2,19 +2,24 @@ import React from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { abstand, farben, radius } from '../theme';
+import { Knopf } from './Formular';
+import { abmelden } from '../lib/anmeldung';
+import { useSitzung } from '../lib/sitzung';
 
 type Props = {
   titel: string;
   beschreibung: string;
   hinweis?: string;
+  mitAbmelden?: boolean;
 };
 
 /**
  * Leerer Bildschirm mit Überschrift und kurzer Beschreibung.
  * Dient als Gerüst, bis die echte Logik kommt (siehe docs/plan.md).
  */
-export function Platzhalter({ titel, beschreibung, hinweis }: Props) {
+export function Platzhalter({ titel, beschreibung, hinweis, mitAbmelden }: Props) {
   const insets = useSafeAreaInsets();
+  const { rolle } = useSitzung();
   return (
     <ScrollView
       style={styles.scroll}
@@ -29,6 +34,12 @@ export function Platzhalter({ titel, beschreibung, hinweis }: Props) {
       {hinweis ? (
         <View style={styles.hinweis}>
           <Text style={styles.hinweisText}>{hinweis}</Text>
+        </View>
+      ) : null}
+      {mitAbmelden ? (
+        <View style={styles.abmelden}>
+          <Text style={styles.karteText}>Angemeldet als {rolle === 'kind' ? 'Kind' : 'Elternteil'}.</Text>
+          <Knopf titel="Abmelden" art="sekundaer" onPress={() => { void abmelden(); }} />
         </View>
       ) : null}
     </ScrollView>
@@ -62,4 +73,5 @@ const styles = StyleSheet.create({
     padding: abstand.m,
   },
   hinweisText: { fontSize: 14, color: farben.text, lineHeight: 20 },
+  abmelden: { gap: abstand.s, marginTop: abstand.m },
 });

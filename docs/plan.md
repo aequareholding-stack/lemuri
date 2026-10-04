@@ -1,15 +1,15 @@
 # Lemuri – Plan der nächsten Aufträge
 
-Stand: 04.10.2026, nach LB-001 und den Entscheidungen des Operators vom selben Tag. Die Auftragsnummern vergibt der Operator; die Buchstaben hier dienen nur dem Verweis. Die Reihenfolge ist ein Vorschlag: A bis C müssen vor D bis G liegen, der Rest kann teilweise parallel laufen.
+Stand: 04.10.2026, nach LB-002. Die Auftragsnummern vergibt der Operator; die Buchstaben hier dienen nur dem Verweis. Die Reihenfolge ist ein Vorschlag: A bis C müssen vor D bis G liegen, der Rest kann teilweise parallel laufen.
 
 | Nr. (Operator) | Kurzname | Beschreibung |
 |---|---|---|
-| | **A – Supabase-Projekt und Migration** | Projekt in Frankfurt anlegen. Tabellen, Hilfsfunktionen, RLS-Regeln und Sichten aus `docs/datenmodell.md` als SQL-Migration schreiben. Themenkatalog Mathe Klasse 5 bis 10 als Startdaten einspielen. Löschjobs (`pg_cron`) anlegen. |
-| | **B – Eltern-Konto und Kind-Profil** | Registrierung und Anmeldung der Eltern (E-Mail + Passwort). Kind-Profil anlegen: Spitzname und Klassenstufe. Familiencode erzeugen und anzeigen, PIN je Kind setzen, Anmeldung des Kindes mit Familiencode + PIN über eine Edge Function (Sperre nach 5 Fehlversuchen). Konto mit allen Daten und einzelne Profile löschen. Testphase von 30 Tagen beim Anlegen des Kontos starten. |
+| LB-002 | **A – Supabase-Projekt und Migration** | Erledigt bis auf das Projekt selbst: Migrationen, RLS, Sichten, Themenkatalog und Löschlauf liegen im Repository. Offen: Projekt „lemuri“ in Frankfurt anlegen (wartet auf Jos Ja zu den Kosten), Migrationen und Seed einspielen, `pg_cron` einschalten, Edge Functions ausrollen, `LEMURI_KIND_GEHEIMNIS` setzen, E-Mail-Vorlagen für Bestätigung und Passwort-Reset auf Deutsch. |
+| LB-002 (Teil) | **B – Eltern-Konto und Kind-Profil** | Erledigt: Registrierung und Anmeldung der Eltern, Anmeldung des Kindes (Familiencode, Profilwahl, PIN, Sperre), Datenbankseite für Profil anlegen, PIN setzen, Konto löschen, Testphase. Offen für einen Folgeauftrag: Bildschirme für Eltern zum Anlegen der Kind-Profile, Anzeige des Familiencodes, PIN neu setzen, Profil und Konto löschen, Passwort vergessen. |
 | | **C – Design umsetzen** | Den Entwurf der fünf Bildschirme (Schrift, Farben, Karten, Chips, Chat-Blasen, Tab-Leiste, Dunkelmodus) als wiederverwendbare Komponenten bauen. Icon-Paket wählen. |
 | | **D – Aufgabe per Text** | Bildschirm „Aufgabe“: Text eingeben, Anliegen wählen („weiß nicht, wie ich anfange“ usw.). Aufgabe speichern, Thema automatisch zuordnen. |
 | | **E – Aufgabe per Foto** | Kamera und Bildauswahl. Bild an die Edge Function `aufgabe-auslesen` schicken, die Claude den Text aus dem Bild lesen lässt; Kind bestätigt („Stimmt so“ / „Neues Foto“). Bild wird nirgends gespeichert. Ein eigener Auslese-Dienst bleibt später möglich. |
-| | **F – Gespräch mit der KI** | Edge Function `gespraech-antwort` mit austauschbarer Anbieter-Schicht (siehe Datenmodell, Abschnitt 8); erste Umsetzung: Claude Sonnet über einen Cloud-Anbieter mit EU-Standort. System-Anweisung: erklären statt lösen, nachfragen, Hinweise in drei Stufen, Lösungsweg loben, sich als KI zu erkennen geben. Nachrichten und Hinweise speichern. Hinweisleiste „0 von 3“. |
+| | **F – Gespräch mit der KI** | Edge Function `gespraech-antwort` mit austauschbarer Anbieter-Schicht (siehe Datenmodell, Abschnitt 8); erste Umsetzung: Claude Sonnet über Amazon Bedrock Frankfurt (vorher Freischaltung der Sonnet-Version prüfen, sonst Google Vertex AI in der EU). System-Anweisung: erklären statt lösen, nachfragen, Hinweise in drei Stufen, Lösungsweg loben, sich als KI zu erkennen geben. Nachrichten und Hinweise speichern. Hinweisleiste „0 von 3“. |
 | | **G – Prüfung** | Nach dem Gespräch eine ähnliche Aufgabe stellen, Antwort prüfen, Selbsteinschätzung abfragen, Themenstand setzen („verstanden“ / „übt noch“). |
 | | **H – Lernzeit, Tageslimit, Lernpause** | Lernsitzungen messen, Tagessumme bilden. Bei erreichtem Limit oder in der Lernpause freundlich sperren. Zeitzone beachten. |
 | | **I – Eltern-Übersicht** | Bildschirm „Eltern“: Lernzeit der Woche als Balken, Themen mit Stand, Einstellungen (Tageslimit, Lernpause). Nur über die beiden Eltern-Sichten. |
@@ -30,28 +30,34 @@ Stand: 04.10.2026, nach LB-001 und den Entscheidungen des Operators vom selben T
 6. Inaktive Konten werden nie automatisch gelöscht; Eltern können Konto und Daten jederzeit selbst löschen.
 7. Kostenlose Testphase: 30 Tage.
 8. Zweige: immer `lb-nnn` passend zum Auftrag.
+9. EU-Anbieter für Claude: Amazon Bedrock in Frankfurt. Vor dem KI-Auftrag prüfen, ob die gewünschte Sonnet-Version dort freigeschaltet ist, sonst Google Vertex AI in der EU.
+10. PIN des Kindes: 4 Ziffern, Sperre nach fünf Fehlversuchen.
+11. Testphase: 30 Tage ab Konto-Anlage, ohne Zahlungsmittel, eine Testphase je Eltern-E-Mail.
+12. Mehr Kinder als gebucht: Die Eltern wählen das aktive Profil, die anderen werden gesperrt, nicht gelöscht.
 
 ## Offene Fragen
 
 Diese Fragen entscheidet der Operator. Zu jeder Frage stehen Antwortmöglichkeiten und eine Empfehlung.
 
-1. **Welcher EU-Cloud-Anbieter für Claude?**
-   - a) Amazon Bedrock, Region Frankfurt. Gleiche Region wie Supabase, Claude-Modelle dort verfügbar.
-   - b) Google Vertex AI, Region in der EU (z. B. Belgien oder Frankfurt).
-   - c) Microsoft Azure AI Foundry, Region in der EU.
-   - **Empfehlung: a**, weil Daten und Modell dann in derselben Region liegen. Vor Auftrag F prüfen, ob die gewünschte Sonnet-Version in Frankfurt freigeschaltet ist; sonst b.
+1. **Welche Domain für die künstlichen Kind-Adressen?** Jeder Kind-Benutzer braucht in Supabase Auth eine E-Mail-Adresse. Es wird nie eine E-Mail dorthin geschickt, aber die Domain sollte Lemuri gehören, damit niemand Fremdes Post bekommen könnte.
+   - a) `kind.lemuri.app`, wenn `lemuri.app` registriert ist oder wird (so im Code vorbelegt).
+   - b) Eine andere Domain, die schon im Besitz ist.
+   - **Empfehlung: a**, die Domain wird später ohnehin für Web-App und Absender-Adresse gebraucht.
 
-2. **Wie sieht die PIN des Kindes aus?**
-   - a) 4 Ziffern. Für Klasse 5 leicht zu merken, zusammen mit Familiencode und Sperre nach 5 Fehlversuchen ausreichend.
-   - b) 6 Ziffern. Sicherer, aber für jüngere Kinder sperriger.
-   - **Empfehlung: a.**
+2. **Wie lange bleibt der E-Mail-Hash für „eine Testphase je E-Mail“ gespeichert?** Er überlebt die Kontolöschung, sonst ließe sich die Testphase durch Löschen und Neuanlegen wiederholen.
+   - a) Unbegrenzt. b) 24 Monate. c) 12 Monate.
+   - **Empfehlung: b**, 24 Monate: lang genug gegen Missbrauch, trotzdem eine feste Frist für die Datenschutzerklärung.
 
-3. **Wie startet die Testphase von 30 Tagen?**
-   - a) In der App ohne Store, ab Konto-Anlage, ohne Zahlungsmittel. Niedrige Hürde; eine Testphase je Eltern-E-Mail.
-   - b) Als Einführungsangebot über Apple und Google, Abo wird beim Start angelegt und läuft danach automatisch weiter. Weniger Abbrüche am Ende, aber Zahlungsmittel schon zu Beginn nötig.
-   - **Empfehlung: a**, damit auch Browser-Nutzer ohne Store testen können.
+3. **Müssen Eltern ihre E-Mail bestätigen, bevor sie sich anmelden können?**
+   - a) Ja, Bestätigungslink zuerst (Supabase-Standard, so eingestellt).
+   - b) Nein, sofort nutzbar, Bestätigung später.
+   - **Empfehlung: a**, weil Familiencode und Kinderdaten an diese Adresse hängen.
 
-4. **Was gilt bei zwei Kindern in der Testphase, wenn danach das Einzel-Abo gewählt wird?**
-   - a) Eltern wählen beim Abschluss, welches Profil aktiv bleibt; die anderen werden gesperrt, nicht gelöscht.
-   - b) Nur der Familien-Plan ist wählbar, solange mehr als ein Profil besteht.
-   - **Empfehlung: a**, weil nichts gelöscht wird und die Eltern entscheiden.
+4. **Wer darf in das Supabase-Dashboard?** Das Dashboard arbeitet mit vollen Rechten und könnte Gesprächsinhalte lesen; die Datenbankrolle `betreiber` schützt nur eine künftige eigene Betreiber-Oberfläche.
+   - a) Nur Jo, mit Zwei-Faktor-Anmeldung; alle anderen bekommen später die Betreiber-Oberfläche.
+   - b) Jo und Timo mit Zwei-Faktor-Anmeldung.
+   - **Empfehlung: a** für den Start, Zugriffe im Dashboard-Protokoll nachvollziehbar.
+
+5. **Mindestlänge des Eltern-Passworts?**
+   - a) 8 Zeichen (so in der App vorgesehen). b) 12 Zeichen. c) 6 Zeichen (Supabase-Standard).
+   - **Empfehlung: a**, im Supabase-Projekt auf 8 setzen, damit App und Server übereinstimmen.

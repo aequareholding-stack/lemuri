@@ -1,13 +1,15 @@
 import React from 'react';
 import { NavigationContainer, DefaultTheme } from '@react-navigation/native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { Text } from 'react-native';
+import { ActivityIndicator, Text, View } from 'react-native';
 import { StartScreen } from '../screens/StartScreen';
 import { AufgabeScreen } from '../screens/AufgabeScreen';
 import { GespraechScreen } from '../screens/GespraechScreen';
 import { PruefungScreen } from '../screens/PruefungScreen';
 import { ElternScreen } from '../screens/ElternScreen';
 import { farben } from '../theme';
+import { useSitzung } from '../lib/sitzung';
+import { AnmeldungNavigator } from './AnmeldungNavigator';
 import type { RootTabParamList } from './types';
 
 const Tab = createBottomTabNavigator<RootTabParamList>();
@@ -37,9 +39,8 @@ function TabSymbol({ name, color }: { name: keyof RootTabParamList; color: strin
   return <Text style={{ color, fontSize: 20 }}>{symbole[name]}</Text>;
 }
 
-export function RootNavigator() {
+function HauptTabs() {
   return (
-    <NavigationContainer theme={lemuriTheme}>
       <Tab.Navigator
         initialRouteName="Start"
         screenOptions={({ route }) => ({
@@ -55,6 +56,22 @@ export function RootNavigator() {
         <Tab.Screen name="Pruefung" component={PruefungScreen} options={{ title: 'Prüfung' }} />
         <Tab.Screen name="Eltern" component={ElternScreen} options={{ title: 'Eltern' }} />
       </Tab.Navigator>
+  );
+}
+
+export function RootNavigator() {
+  const { laedt, sitzung } = useSitzung();
+  return (
+    <NavigationContainer theme={lemuriTheme}>
+      {laedt ? (
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: farben.hintergrund }}>
+          <ActivityIndicator color={farben.akzent} />
+        </View>
+      ) : sitzung ? (
+        <HauptTabs />
+      ) : (
+        <AnmeldungNavigator />
+      )}
     </NavigationContainer>
   );
 }
