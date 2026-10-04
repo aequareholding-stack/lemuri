@@ -62,8 +62,9 @@ E-Mail und Passwort liegen bei Supabase Auth, nicht in dieser Tabelle.
 | auth_user_id | uuid, FK → auth.users, eindeutig | eigener Anmelde-Benutzer des Kindes (ohne E-Mail) |
 | spitzname | text | Vorname oder Spitzname, höchstens 30 Zeichen |
 | klassenstufe | smallint | 5 bis 10 |
-| pin_hash | text | gesalzener Hash der PIN; nur der Server liest und schreibt ihn, keine RLS-Regel gibt ihn heraus |
-| pin_fehlversuche | smallint | Zähler; nach 5 Fehlversuchen ist die Anmeldung 15 Minuten gesperrt |
+| pin_hash | text | gesalzener Hash der 4-stelligen PIN; nur der Server liest und schreibt ihn, keine RLS-Regel gibt ihn heraus |
+| pin_fehlversuche | smallint | Zähler; nach 5 Fehlversuchen ist das Profil gesperrt, bis die Eltern eine neue PIN setzen |
+| gesperrt_am | timestamptz, optional | gesetzt bei PIN-Sperre oder wenn das Abo weniger Profile erlaubt als vorhanden (Eltern wählen das aktive Profil, die anderen werden gesperrt, nicht gelöscht) |
 | erstellt_am | timestamptz | |
 
 Bewusst **nicht** vorhanden: Geburtsdatum, Schule, Adresse, Geschlecht, Foto, E-Mail.
@@ -214,7 +215,7 @@ Regel (vorläufig): `verstanden`, sobald eine Prüfaufgabe zum Thema richtig gel
 | eltern_id | uuid, FK → eltern_konto | |
 | plan | text | `einzel` (ein Kind, 9,99 Euro im Monat) oder `familie` (bis zu drei Kinder, 14,99 Euro im Monat) |
 | preis_cent | integer | 999 oder 1499, zum Zeitpunkt des Abschlusses |
-| status | text | `testphase` (30 Tage kostenlos ab Konto-Anlage), `aktiv`, `gekuendigt` (läuft bis gueltig_bis), `abgelaufen` |
+| status | text | `testphase` (30 Tage kostenlos ab Konto-Anlage, ohne Zahlungsmittel, eine Testphase je Eltern-E-Mail), `aktiv`, `gekuendigt` (läuft bis gueltig_bis), `abgelaufen` |
 | anbieter | text, optional | `apple` oder `google`; leer in der Testphase. Zahlung im Browser kommt in einem späteren Auftrag dazu |
 | anbieter_referenz | text, optional | Transaktions- bzw. Kunden-ID beim Anbieter |
 | testphase_bis | timestamptz | Konto-Anlage plus 30 Tage |
@@ -222,7 +223,7 @@ Regel (vorläufig): `verstanden`, sobald eine Prüfaufgabe zum Thema richtig gel
 | gekuendigt_am | timestamptz, optional | |
 | erstellt_am | timestamptz | |
 
-Zahlungsdaten (Karte, Konto) liegen nie bei Lemuri, nur beim Anbieter. Jedes Eltern-Konto hat genau eine Abo-Zeile; sie entsteht mit dem Konto im Status `testphase`. In der Testphase gilt die Grenze des Familien-Plans (bis zu drei Kinder). Nach Ablauf ohne Abschluss: Status `abgelaufen`, das Kind kann keine neue Aufgabe beginnen, Eltern sehen weiter ihre Übersicht, nichts wird gelöscht.
+Zahlungsdaten (Karte, Konto) liegen nie bei Lemuri, nur beim Anbieter. Jedes Eltern-Konto hat genau eine Abo-Zeile; sie entsteht mit dem Konto im Status `testphase`. In der Testphase gilt die Grenze des Familien-Plans (bis zu drei Kinder). Erlaubt das gebuchte Abo weniger Profile als vorhanden, wählen die Eltern das aktive Profil; die anderen bekommen `gesperrt_am` und bleiben mit allen Daten erhalten. Nach Ablauf ohne Abschluss: Status `abgelaufen`, das Kind kann keine neue Aufgabe beginnen, Eltern sehen weiter ihre Übersicht, nichts wird gelöscht.
 
 **RLS:** Eltern lesen das eigene Abo. Schreiben nur der Server (über Webhooks der Anbieter). Kinder: kein Zugriff.
 
@@ -293,14 +294,15 @@ create policy "kind schreibt eigene nachrichten"
 
 | Thema | Entscheidung | Wo im Modell |
 |---|---|---|
-| Anmeldung Kind | eigener Benutzer, Familiencode + PIN | 2, 3.1, 3.2 |
+| Anmeldung Kind | eigener Benutzer, Familiencode + 4-stellige PIN, Sperre nach fünf Fehlversuchen | 2, 3.1, 3.2 |
 | Aufbewahrung Gespräche | 90 Tage nach Gesprächsende | 5 |
 | Foto auslesen | direkt mit Claude, eigener Dienst später möglich | 3.4, 5 |
-| KI-Modell | Claude über Cloud-Anbieter mit EU-Standort, Anbieter austauschbar | 1.8, 5, 8 |
+| KI-Modell | Claude über Amazon Bedrock Frankfurt, sonst Google Vertex AI in der EU; Anbieter austauschbar | 1.8, 5, 8 |
 | Abo | erst Apple und Google, Browser später | 3.12 |
 | Inaktive Konten | keine automatische Löschung, Eltern löschen selbst | 1.7, 5 |
-| Testphase | 30 Tage kostenlos | 3.12 |
+| Testphase | 30 Tage ab Konto-Anlage, ohne Zahlungsmittel, eine je Eltern-E-Mail | 3.12 |
+| Mehr Kinder als gebucht | Eltern wählen das aktive Profil, die anderen werden gesperrt, nicht gelöscht | 3.2, 3.12 |
 
 ## 8. Anbindung des KI-Modells (austauschbar)
 
-Die App ruft nie den KI-Anbieter direkt auf, sondern immer eine Edge Function in Supabase (`gespraech-antwort`, `aufgabe-auslesen`). Darin steckt eine kleine Schnittstelle mit zwei Funktionen: `antwortErzeugen(nachrichten)` und `textAusBild(bild)`. Dahinter liegt je Anbieter eine Umsetzung (zuerst: Claude Sonnet über einen EU-Cloud-Anbieter). Welche Umsetzung läuft, entscheidet eine Umgebungsvariable. So lässt sich der Anbieter wechseln, ohne App oder Datenmodell anzufassen. Der Anbieter wird in keiner Tabelle gespeichert.
+Die App ruft nie den KI-Anbieter direkt auf, sondern immer eine Edge Function in Supabase (`gespraech-antwort`, `aufgabe-auslesen`). Darin steckt eine kleine Schnittstelle mit zwei Funktionen: `antwortErzeugen(nachrichten)` und `textAusBild(bild)`. Dahinter liegt je Anbieter eine Umsetzung. Zuerst: Claude Sonnet über Amazon Bedrock in der Region Frankfurt. Vor dem KI-Auftrag wird geprüft, ob die gewünschte Sonnet-Version dort freigeschaltet ist; sonst Google Vertex AI in einer EU-Region. Welche Umsetzung läuft, entscheidet eine Umgebungsvariable. So lässt sich der Anbieter wechseln, ohne App oder Datenmodell anzufassen. Der Anbieter wird in keiner Tabelle gespeichert.
