@@ -1,5 +1,6 @@
 -- LB-002: Zeitgesteuerte Löschung nach docs/datenmodell.md, Abschnitt 5
 -- Gespräche und Aufgaben: 90 Tage. Lernsitzungen: 7 Tage. Lernzeit_tag: 12 Monate.
+-- E-Mail-Prüfsumme gegen eine zweite Testphase: 24 Monate.
 -- Keine automatische Löschung von Konten oder Profilen.
 
 create or replace function public.loeschlauf()
@@ -42,6 +43,11 @@ begin
   delete from public.lernzeit_tag where datum < current_date - interval '12 months';
   get diagnostics n = row_count;
   tabelle := 'lernzeit_tag'; geloescht := n; return next;
+
+  -- Prüfsumme der Eltern-E-Mail gegen eine zweite Testphase: nach 24 Monaten löschen
+  delete from public.testphase_verbraucht where erstellt_am < now() - interval '24 months';
+  get diagnostics n = row_count;
+  tabelle := 'testphase_verbraucht'; geloescht := n; return next;
 end $$;
 
 revoke execute on function public.loeschlauf() from public, anon, authenticated;

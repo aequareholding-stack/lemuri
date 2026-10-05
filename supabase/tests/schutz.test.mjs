@@ -256,5 +256,23 @@ export async function schutzTests(client) {
   pruefe('Löschlauf entfernt Gespräche nach 90 Tagen', (await client.query('select count(*)::int as n from gespraech_nachricht')).rows[0].n === 0);
   pruefe('Themenstand bleibt nach dem Löschlauf', (await client.query('select count(*)::int as n from kind_thema_stand')).rows[0].n === 1);
 
+  // E-Mail-Prüfsumme: nur Hash, kein Klartext; nach 24 Monaten gelöscht, vorher nicht
+  const hashZeilen = (await client.query('select email_hash from testphase_verbraucht')).rows;
+  pruefe('Prüfsumme enthält keine E-Mail im Klartext', hashZeilen.length >= 2 && hashZeilen.every((z) => /^[0-9a-f]{64}$/.test(z.email_hash)));
+  await alsServer(client, () => client.query(`update testphase_verbraucht set erstellt_am = now() - interval '23 months' where email_hash = (select min(email_hash) from testphase_verbraucht)`));
+  await alsServer(client, () => client.query('select * from loeschlauf()'));
+  pruefe('Prüfsumme bleibt vor Ablauf von 24 Monaten', (await client.query('select count(*)::int as n from testphase_verbraucht')).rows[0].n === hashZeilen.length);
+  await alsServer(client, () => client.query(`update testphase_verbraucht set erstellt_am = now() - interval '25 months' where email_hash = (select min(email_hash) from testphase_verbraucht)`));
+  await alsServer(client, () => client.query('select * from loeschlauf()'));
+  pruefe('Prüfsumme wird nach 24 Monaten gelöscht', (await client.query('select count(*)::int as n from testphase_verbraucht')).rows[0].n === hashZeilen.length - 1);
+
+  // PIN muss genau vier Ziffern haben
+  await client.query('begin');
+  const pinCode = await fehlerCode(client, 'select kind_pin_setzen($1, $2, $3)', [f1.eltern, mia.kindId, '123']);
+  pruefe('PIN mit drei Ziffern wird abgelehnt', pinCode === '22023', `(Fehlercode ${pinCode})`);
+  const pinCode2 = await fehlerCode(client, 'select kind_pin_setzen($1, $2, $3)', [f1.eltern, mia.kindId, 'abcd']);
+  pruefe('PIN mit Buchstaben wird abgelehnt', pinCode2 === '22023', `(Fehlercode ${pinCode2})`);
+  await client.query('commit');
+
   return ergebnisse.filter((e) => !e.ok).length;
 }
