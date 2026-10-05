@@ -60,7 +60,7 @@ E-Mail und Passwort liegen bei Supabase Auth, nicht in dieser Tabelle.
 |---|---|---|
 | id | uuid, PK | |
 | eltern_id | uuid, FK → eltern_konto | |
-| auth_user_id | uuid, FK → auth.users, eindeutig | eigener Anmelde-Benutzer des Kindes. Er hat eine künstliche Adresse `kind-<id>@kind.lemuri.app`, an die nie eine E-Mail geht, und ein Passwort, das nur der Server aus einem Geheimnis ableitet. Die PIN ist nie das Passwort |
+| auth_user_id | uuid, FK → auth.users, eindeutig | eigener Anmelde-Benutzer des Kindes. Er hat eine künstliche Adresse `kind-<id>@kind.lemuri.app` (Domain gehört Jo, Entscheidung vom 05.10.2026), an die nie eine E-Mail geht, und ein Passwort, das nur der Server aus einem Geheimnis ableitet. Die PIN ist nie das Passwort |
 | spitzname | text | Vorname oder Spitzname, höchstens 30 Zeichen |
 | klassenstufe | smallint | 5 bis 10 |
 | inaktiv_seit | timestamptz, optional | gesetzt, wenn das Abo weniger Profile erlaubt als vorhanden: Eltern wählen das aktive Profil, die anderen werden gesperrt, nicht gelöscht |
@@ -261,7 +261,7 @@ Beide Sichten laufen mit den RLS-Regeln des aufrufenden Benutzers (`security inv
 | `lernzeit_tag` | 12 Monate nach `datum`; sofort mit dem Profil |
 | `kind_thema_stand` | sofort mit dem Profil |
 | `elterneinstellungen` | sofort mit dem Profil |
-| `testphase_verbraucht.email_hash` | bleibt nach der Kontolöschung, damit dieselbe E-Mail keine zweite Testphase bekommt (Hash, kein Klartext). Wie lange, ist eine offene Frage in `docs/plan.md` |
+| `testphase_verbraucht.email_hash` | bleibt nach der Kontolöschung, damit dieselbe E-Mail keine zweite Testphase bekommt (SHA-256, kein Klartext). Der Löschlauf entfernt den Eintrag 24 Monate nach dem Anlegen |
 | `eltern_konto` (mit `familiencode`), `abo` | sofort bei Kontolöschung; Abrechnungsbelege beim Zahlungsanbieter bleiben so lange, wie es das Steuerrecht verlangt (keine Kinderdaten darin) |
 | Daten beim KI-Anbieter | Gesprächstexte und Fotos gehen an Claude über einen Cloud-Anbieter mit EU-Standort; dort keine Speicherung über die Anfrage hinaus und keine Verwendung zum Training (Vertragsbedingung, im Auftrag „Datenschutz“ zu prüfen) |
 | Server-Protokolle (Logs) | enthalten keine Gesprächsinhalte und keine Spitznamen, nur IDs; 30 Tage |
@@ -316,7 +316,9 @@ create policy "kind schreibt eigene nachrichten"
 | KI-Modell | Claude über Amazon Bedrock Frankfurt, sonst Google Vertex AI in der EU; Anbieter austauschbar | 1.8, 5, 8 |
 | Abo | erst Apple und Google, Browser später | 3.12 |
 | Inaktive Konten | keine automatische Löschung, Eltern löschen selbst | 1.7, 5 |
-| Testphase | 30 Tage ab Konto-Anlage, ohne Zahlungsmittel, eine je Eltern-E-Mail | 3.12 |
+| Testphase | 30 Tage ab Konto-Anlage, ohne Zahlungsmittel, eine je Eltern-E-Mail; die E-Mail-Prüfsumme wird nach 24 Monaten gelöscht | 3.12, 5 |
+| Eltern-Anmeldung | E-Mail-Bestätigung per Link vor der ersten Anmeldung, Passwort mindestens 8 Zeichen | 2, 9 |
+| Supabase-Dashboard | nur Jo mit Zwei-Faktor-Anmeldung; Lemuri App arbeitet nur über den technischen Zugang | 9 |
 | Mehr Kinder als gebucht | Eltern wählen das aktive Profil, die anderen werden gesperrt, nicht gelöscht | 3.2, 3.12 |
 
 ## 8. Anbindung des KI-Modells (austauschbar)
@@ -337,4 +339,9 @@ Die App ruft nie den KI-Anbieter direkt auf, sondern immer eine Edge Function in
 | `supabase/functions/kind-pin-setzen` | Eltern setzen eine neue PIN, Sperre wird aufgehoben |
 | `supabase/tests/` | Nachbildung der Supabase-Umgebung für ein normales PostgreSQL und die Schutz-Tests |
 
-Geheimnisse: Die Edge Functions brauchen neben den von Supabase gesetzten Schlüsseln die Umgebungsvariable `LEMURI_KIND_GEHEIMNIS` (Zufallswert, mindestens 32 Zeichen). Sie wird im Supabase-Dashboard hinterlegt, nie im Repository.
+Geheimnisse: Die Edge Functions brauchen neben den von Supabase gesetzten Schlüsseln die Umgebungsvariable `LEMURI_KIND_GEHEIMNIS` (Zufallswert, mindestens 32 Zeichen). Jo hinterlegt sie im Supabase-Dashboard unter Edge Functions → Secrets; sie steht nie im Repository und nie im Chat.
+
+Einstellungen im Supabase-Dashboard (Authentication), die nicht in Migrationen liegen:
+- „Confirm email“ eingeschaltet: Eltern bestätigen ihre E-Mail per Link vor der ersten Anmeldung.
+- Mindestlänge des Passworts: 8 Zeichen (die App prüft das ebenfalls).
+- Zugang zum Dashboard nur für Jo, mit Zwei-Faktor-Anmeldung.

@@ -35,29 +35,15 @@ Stand: 04.10.2026, nach LB-002. Die Auftragsnummern vergibt der Operator; die Bu
 11. Testphase: 30 Tage ab Konto-Anlage, ohne Zahlungsmittel, eine Testphase je Eltern-E-Mail.
 12. Mehr Kinder als gebucht: Die Eltern wählen das aktive Profil, die anderen werden gesperrt, nicht gelöscht.
 
+Entschieden am 05.10.2026:
+
+13. Eigenes Supabase-Projekt „lemuri“ in Frankfurt; Jo gibt etwa zehn US-Dollar im Monat (rund 9 Euro im Monat) frei.
+14. Domain der künstlichen Kind-Adressen: `kind.lemuri.app` (lemuri.app gehört Jo). An diese Adressen wird nie etwas geschickt.
+15. Die E-Mail-Prüfsumme gegen eine zweite Testphase wird nach 24 Monaten gelöscht.
+16. Eltern bestätigen ihre E-Mail per Link, bevor sie sich zum ersten Mal anmelden.
+17. Ins Supabase-Dashboard darf nur Jo, mit Zwei-Faktor-Anmeldung. Lemuri App arbeitet nur über den technischen Zugang und lädt niemanden ein.
+18. Das Eltern-Passwort hat mindestens 8 Zeichen.
+
 ## Offene Fragen
 
-Diese Fragen entscheidet der Operator. Zu jeder Frage stehen Antwortmöglichkeiten und eine Empfehlung.
-
-1. **Welche Domain für die künstlichen Kind-Adressen?** Jeder Kind-Benutzer braucht in Supabase Auth eine E-Mail-Adresse. Es wird nie eine E-Mail dorthin geschickt, aber die Domain sollte Lemuri gehören, damit niemand Fremdes Post bekommen könnte.
-   - a) `kind.lemuri.app`, wenn `lemuri.app` registriert ist oder wird (so im Code vorbelegt).
-   - b) Eine andere Domain, die schon im Besitz ist.
-   - **Empfehlung: a**, die Domain wird später ohnehin für Web-App und Absender-Adresse gebraucht.
-
-2. **Wie lange bleibt der E-Mail-Hash für „eine Testphase je E-Mail“ gespeichert?** Er überlebt die Kontolöschung, sonst ließe sich die Testphase durch Löschen und Neuanlegen wiederholen.
-   - a) Unbegrenzt. b) 24 Monate. c) 12 Monate.
-   - **Empfehlung: b**, 24 Monate: lang genug gegen Missbrauch, trotzdem eine feste Frist für die Datenschutzerklärung.
-
-3. **Müssen Eltern ihre E-Mail bestätigen, bevor sie sich anmelden können?**
-   - a) Ja, Bestätigungslink zuerst (Supabase-Standard, so eingestellt).
-   - b) Nein, sofort nutzbar, Bestätigung später.
-   - **Empfehlung: a**, weil Familiencode und Kinderdaten an diese Adresse hängen.
-
-4. **Wer darf in das Supabase-Dashboard?** Das Dashboard arbeitet mit vollen Rechten und könnte Gesprächsinhalte lesen; die Datenbankrolle `betreiber` schützt nur eine künftige eigene Betreiber-Oberfläche.
-   - a) Nur Jo, mit Zwei-Faktor-Anmeldung; alle anderen bekommen später die Betreiber-Oberfläche.
-   - b) Jo und Timo mit Zwei-Faktor-Anmeldung.
-   - **Empfehlung: a** für den Start, Zugriffe im Dashboard-Protokoll nachvollziehbar.
-
-5. **Mindestlänge des Eltern-Passworts?**
-   - a) 8 Zeichen (so in der App vorgesehen). b) 12 Zeichen. c) 6 Zeichen (Supabase-Standard).
-   - **Empfehlung: a**, im Supabase-Projekt auf 8 setzen, damit App und Server übereinstimmen.
+Derzeit keine. Neue Fragen kommen mit dem jeweiligen Auftrag.
