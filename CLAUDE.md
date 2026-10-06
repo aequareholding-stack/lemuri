@@ -29,3 +29,12 @@ Ist ein Auftrag nicht fertig, steht ganz oben, was fehlt und was der Operator tu
 - Offene Fragen werden gesammelt, nicht selbst entschieden.
 - Vor dem Push: `npm run typecheck` muss grün sein.
 - Sprache in Code-Kommentaren, Dokumenten und Berichten: Deutsch.
+
+## Arbeitsregel von Jo (06.10.2026): ohne Zwischenfragen arbeiten
+
+Jo arbeitet am Handy und ist oft länger weg. Jede Erlaubnis-Abfrage hält die Arbeit an, ohne dass Jo es merkt.
+
+- Die Datei `.claude/settings.json` erlaubt dauerhaft alle Befehle, die für Lemuri regelmäßig nötig sind: Paketverwaltung, Tests, Typprüfung, Build, git auf `lb-`-Zweigen, Pull Requests, Supabase-Werkzeuge für das Projekt „lemuri“. Gesperrt bleiben: Löschen außerhalb des Repositorys, Push direkt auf `main`, Anzeigen von Geheimnissen, Anlegen oder Pausieren von Supabase-Projekten.
+- Jeder Auftrag wird ohne Zwischenfragen bis zum Ende durchgearbeitet. Angehalten wird nur, wenn Geld, Rechte an Kinderdaten, Löschen oder ein fehlender Zugang betroffen sind.
+- Wer anhält, beginnt die Nachricht mit der Zeile `WARTET AUF JO:` und schreibt in einem Satz, worauf.
+- Fehlt eine Erlaubnis, die regelmäßig gebraucht wird, kommt sie per Pull Request in `.claude/settings.json`, nicht als Rückfrage.
