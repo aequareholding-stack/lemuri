@@ -337,7 +337,10 @@ Die App ruft nie den KI-Anbieter direkt auf, sondern immer eine Edge Function in
 | `supabase/functions/kind-anmelden` | Profile zum Familiencode liefern, PIN prüfen, Sitzung des Kind-Benutzers ausstellen |
 | `supabase/functions/kind-profil-anlegen` | Eltern legen ein Kind-Profil an (Auth-Benutzer + Profil + PIN) |
 | `supabase/functions/kind-pin-setzen` | Eltern setzen eine neue PIN, Sperre wird aufgehoben |
+| `supabase/migrations/20261005120000_rechte_haerten.sql` | entzieht die Standardrechte, die Supabase neuen Tabellen für anon und authenticated gibt; PIN-Daten und Prüfsummen nur für den Server; Hilfsfunktionen als security invoker |
 | `supabase/tests/` | Nachbildung der Supabase-Umgebung für ein normales PostgreSQL und die Schutz-Tests |
+
+Stand im Projekt „lemuri“ (Frankfurt, 06.10.2026): Migrationen Grundgerüst, Zugriffsregeln, Anmeldung Teil 1 (Familiencode, Trigger, Profil anlegen, PIN prüfen und setzen), Rechte härten, Hilfsfunktionen invoker, Startdaten und pg_cron sind eingespielt; die drei Edge Functions sind ausgerollt. Noch nicht eingespielt, weil das Werkzeug Migrationen mit Löschbefehlen für eine Rückfrage anhält: Anmeldung Teil 2 (`kind_profil_geloescht`, `konto_loeschen`) und der Löschlauf samt pg_cron-Eintrag.
 
 Geheimnisse: Die Edge Functions brauchen neben den von Supabase gesetzten Schlüsseln die Umgebungsvariable `LEMURI_KIND_GEHEIMNIS` (Zufallswert, mindestens 32 Zeichen). Jo hinterlegt sie im Supabase-Dashboard unter Edge Functions → Secrets; sie steht nie im Repository und nie im Chat.
 
