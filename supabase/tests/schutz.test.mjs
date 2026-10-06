@@ -147,6 +147,7 @@ export async function schutzTests(client) {
     pruefe('Eltern sehen Themen mit Stand in der Sicht', (await zaehle(client, 'select * from eltern_themen')) === 1);
     pruefe('Eltern sehen ihr Abo', (await zaehle(client, 'select * from abo')) === 1);
     pruefe('Eltern sehen Einstellungen ihrer Kinder', (await zaehle(client, 'select * from elterneinstellungen')) === 2);
+    pruefe('Eltern löschen Profile nicht direkt (nur über den Server)', (await zaehle(client, 'delete from kind_profil where id = $1', [ben.kindId])) === -1);
     const code = await fehlerCode(client, `insert into gespraech_nachricht (gespraech_id, kind_id, rolle, inhalt) values ($1, $2, 'kind', 'x')`, [gespraechId, mia.kindId]);
     pruefe('Eltern können keine Nachricht einschleusen', code === '42501', `(Fehlercode ${code})`);
   });
@@ -244,8 +245,15 @@ export async function schutzTests(client) {
   pruefe('Neues Konto startet in der Testphase (30 Tage, Familie)', abo.status === 'testphase' && abo.plan === 'familie' && abo.dreissig);
 
   // Dieselbe E-Mail nach Kontolöschung bekommt keine zweite Testphase
+  // Kontolöschung wie die Edge Function "konto-loeschen": erst Kind-Benutzer, dann Eltern
+  await client.query('delete from auth.users where id = any($1)', [[lea.authId]]);
   await client.query('delete from auth.users where id = $1', [f2.eltern]);
   pruefe('Kontolöschung entfernt Kind-Benutzer mit', (await client.query('select * from auth.users where id = $1', [lea.authId])).rowCount === 0);
+  pruefe('Kontolöschung entfernt Profil und Daten des Kindes', (await client.query('select * from kind_profil where id = $1', [lea.kindId])).rowCount === 0
+    && (await client.query('select * from kind_pin where kind_id = $1', [lea.kindId])).rowCount === 0
+    && (await client.query('select * from elterneinstellungen where kind_id = $1', [lea.kindId])).rowCount === 0);
+  pruefe('Kontolöschung entfernt Eltern-Konto und Abo', (await client.query('select * from eltern_konto where id = $1', [f2.eltern])).rowCount === 0
+    && (await client.query('select * from abo where eltern_id = $1', [f2.eltern])).rowCount === 0);
   const f2neu = (await client.query(`insert into auth.users (email) values ('familie2@example.org') returning id`)).rows[0].id;
   const abo2 = (await client.query('select status from abo where eltern_id = $1', [f2neu])).rows[0];
   pruefe('Zweites Konto mit derselben E-Mail bekommt keine Testphase', abo2.status === 'abgelaufen');

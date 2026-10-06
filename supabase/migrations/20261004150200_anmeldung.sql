@@ -232,43 +232,14 @@ begin
 end $$;
 
 -- ---------------------------------------------------------------
--- Profil gelöscht: auch den Anmelde-Benutzer des Kindes entfernen
+-- Löschen von Profil und Konto läuft über die Edge Functions
+-- "kind-profil-loeschen" und "konto-loeschen": Sie entfernen die Anmelde-
+-- Benutzer über die Auth-Verwaltung, die Fremdschlüssel räumen den Rest weg.
+-- Eltern löschen deshalb nicht direkt in kind_profil.
 -- ---------------------------------------------------------------
-create or replace function public.kind_profil_geloescht()
-returns trigger
-language plpgsql
-security definer
-set search_path = public
-as $$
-begin
-  delete from auth.users where id = old.auth_user_id;
-  return old;
-end $$;
-
-create trigger kind_profil_geloescht
-  after delete on public.kind_profil
-  for each row execute function public.kind_profil_geloescht();
-
--- ---------------------------------------------------------------
--- Eltern löschen ihr Konto mit allen Daten (von der App aufrufbar)
--- ---------------------------------------------------------------
-create or replace function public.konto_loeschen()
-returns void
-language plpgsql
-security definer
-set search_path = public
-as $$
-begin
-  if auth.uid() is null or not exists (select 1 from public.eltern_konto where id = auth.uid()) then
-    raise exception 'Nur Eltern können ihr Konto löschen' using errcode = '42501';
-  end if;
-  -- Löscht über Fremdschlüssel: eltern_konto, abo, kind_profil (und deren Auth-Benutzer per Trigger),
-  -- Aufgaben, Gespräche, Nachrichten, Hinweise, Prüfergebnisse, Lernzeit, Themenstand, Einstellungen.
-  delete from auth.users where id = auth.uid();
-end $$;
+revoke delete on public.kind_profil from authenticated;
 
 -- Nur diese Funktionen dürfen von der App aufgerufen werden.
 revoke execute on all functions in schema public from public, anon, authenticated;
-grant execute on function public.konto_loeschen() to authenticated;
 grant execute on function public.ist_kind(uuid), public.ist_eltern_von(uuid) to authenticated;
 grant execute on all functions in schema public to service_role;

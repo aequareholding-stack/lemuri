@@ -68,7 +68,7 @@ E-Mail und Passwort liegen bei Supabase Auth, nicht in dieser Tabelle.
 
 Bewusst **nicht** vorhanden: Geburtsdatum, Schule, Adresse, Geschlecht, Foto, E-Mail.
 
-**RLS:** Eltern lesen, anlegen, ändern und löschen Profile mit `eltern_id = auth.uid()`. Die Anzahl ist durch das Abo begrenzt (1 oder 3), geprüft in einer Datenbank-Funktion beim Anlegen. Anlegen geht nur über die Edge Function `kind-profil-anlegen`, weil zuerst der Anmelde-Benutzer entstehen muss. Das Kind liest nur die eigene Zeile (`auth_user_id = auth.uid()`), ändert nichts.
+**RLS:** Eltern lesen und ändern Profile mit `eltern_id = auth.uid()`. Die Anzahl ist durch das Abo begrenzt (1 oder 3), geprüft in einer Datenbank-Funktion beim Anlegen. Anlegen geht nur über die Edge Function `kind-profil-anlegen`, weil zuerst der Anmelde-Benutzer entstehen muss. Das Kind liest nur die eigene Zeile (`auth_user_id = auth.uid()`), ändert nichts.
 
 ### 3.2a `kind_pin` – PIN-Daten (nur Server)
 
@@ -252,7 +252,7 @@ Beide Sichten laufen mit den RLS-Regeln des aufrufenden Benutzers (`security inv
 | Feld / Tabelle | Wann gelöscht |
 |---|---|
 | Foto der Aufgabe | wird nie gespeichert; die Edge Function reicht es an das KI-Modell weiter und verwirft es sofort nach der Antwort, keine Kopie in Supabase Storage, kein Ablegen beim Anbieter |
-| `kind_profil.spitzname`, `klassenstufe` und `kind_pin` | sofort, wenn Eltern das Profil löschen oder das Konto löschen (Funktion `konto_loeschen`). Keine automatische Löschung bei ruhenden Konten (Entscheidung des Operators); Eltern können jederzeit selbst löschen |
+| `kind_profil.spitzname`, `klassenstufe` und `kind_pin` | sofort, wenn Eltern das Profil löschen (Edge Function `kind-profil-loeschen`) oder das Konto löschen (Edge Function `konto-loeschen`). Keine automatische Löschung bei ruhenden Konten (Entscheidung des Operators); Eltern können jederzeit selbst löschen |
 | Anmelde-Benutzer des Kindes (`auth.users`) | zusammen mit dem Profil |
 | `aufgabe.aufgabentext`, `anliegen` | 90 Tage nach `erledigt_am` (bzw. nach `erstellt_am`, wenn nie erledigt); sofort mit dem Profil |
 | `gespraech`, `gespraech_nachricht.inhalt`, `hinweis` | 90 Tage nach `beendet_am` (bzw. `gestartet_am`); sofort mit dem Profil. Nach dem Löschen bleiben nur die Zähler in `kind_thema_stand` |
@@ -273,7 +273,7 @@ Die „sofort“-Löschungen laufen über `on delete cascade` an den Fremdschlü
 | Tabelle | Kind | Eltern | Server |
 |---|---|---|---|
 | eltern_konto | – | eigene Zeile: lesen, ändern | alles |
-| kind_profil | eigene Zeile: lesen | eigene Kinder: lesen, ändern, löschen (anlegen über den Server) | alles |
+| kind_profil | eigene Zeile: lesen | eigene Kinder: lesen, ändern (anlegen und löschen über den Server) | alles |
 | kind_pin | – | – | alles |
 | thema | lesen | lesen | alles |
 | aufgabe | eigene: lesen, anlegen, ändern | – | alles |
@@ -331,16 +331,18 @@ Die App ruft nie den KI-Anbieter direkt auf, sondern immer eine Edge Function in
 |---|---|
 | `supabase/migrations/20261004150000_grundgeruest.sql` | Erweiterung pgcrypto, alle Tabellen und Indizes, Hilfsfunktionen `ist_kind`, `ist_eltern_von`, Sicht `betreiber_kennzahlen` |
 | `supabase/migrations/20261004150100_zugriffsregeln.sql` | Rechte je Rolle, RLS auf jeder Tabelle, alle Regeln, Eltern-Sichten `eltern_lernzeit_woche` und `eltern_themen`, Rolle `betreiber` |
-| `supabase/migrations/20261004150200_anmeldung.sql` | Familiencode, Trigger für neue Auth-Benutzer (Konto + Abo in Testphase), Profilgrenze, `kind_profil_anlegen`, `familie_profile`, `kind_anmeldung_pruefen` (Sperre nach fünf Fehlversuchen), `kind_pin_setzen`, `konto_loeschen` |
+| `supabase/migrations/20261004150200_anmeldung.sql` | Familiencode, Trigger für neue Auth-Benutzer (Konto + Abo in Testphase), Profilgrenze, `kind_profil_anlegen`, `familie_profile`, `kind_anmeldung_pruefen` (Sperre nach fünf Fehlversuchen), `kind_pin_setzen`; Löschen nur über den Server |
 | `supabase/migrations/20261004150300_loeschlauf.sql` | Funktion `loeschlauf` (90 Tage Gespräche und Aufgaben, 7 Tage Sitzungen, 12 Monate Tagessummen), täglicher Lauf über pg_cron, falls eingeschaltet |
 | `supabase/seed.sql` | Themenkatalog Mathe Klasse 5 bis 10 |
 | `supabase/functions/kind-anmelden` | Profile zum Familiencode liefern, PIN prüfen, Sitzung des Kind-Benutzers ausstellen |
 | `supabase/functions/kind-profil-anlegen` | Eltern legen ein Kind-Profil an (Auth-Benutzer + Profil + PIN) |
 | `supabase/functions/kind-pin-setzen` | Eltern setzen eine neue PIN, Sperre wird aufgehoben |
+| `supabase/functions/kind-profil-loeschen` | Eltern löschen ein Kind-Profil (Anmelde-Benutzer weg, Fremdschlüssel räumen den Rest) |
+| `supabase/functions/konto-loeschen` | Eltern löschen ihr Konto mit allen Daten (erst Kind-Benutzer, dann Eltern-Benutzer) |
 | `supabase/migrations/20261005120000_rechte_haerten.sql` | entzieht die Standardrechte, die Supabase neuen Tabellen für anon und authenticated gibt; PIN-Daten und Prüfsummen nur für den Server; Hilfsfunktionen als security invoker |
 | `supabase/tests/` | Nachbildung der Supabase-Umgebung für ein normales PostgreSQL und die Schutz-Tests |
 
-Stand im Projekt „lemuri“ (Frankfurt, 06.10.2026): Migrationen Grundgerüst, Zugriffsregeln, Anmeldung Teil 1 (Familiencode, Trigger, Profil anlegen, PIN prüfen und setzen), Rechte härten, Hilfsfunktionen invoker, Startdaten und pg_cron sind eingespielt; die drei Edge Functions sind ausgerollt. Noch nicht eingespielt, weil das Werkzeug Migrationen mit Löschbefehlen für eine Rückfrage anhält: Anmeldung Teil 2 (`kind_profil_geloescht`, `konto_loeschen`) und der Löschlauf samt pg_cron-Eintrag.
+Stand im Projekt „lemuri“ (Frankfurt, 06.10.2026): Migrationen Grundgerüst, Zugriffsregeln, Anmeldung Teil 1 (Familiencode, Trigger, Profil anlegen, PIN prüfen und setzen), Rechte härten, Hilfsfunktionen invoker, Startdaten und pg_cron sind eingespielt; die drei Edge Functions sind ausgerollt. Löschen von Profil und Konto läuft über die Edge Functions `kind-profil-loeschen` und `konto-loeschen`. Noch nicht eingespielt, weil das Werkzeug SQL mit Löschbefehlen anhält: der Löschlauf samt pg_cron-Eintrag (Jo spielt ihn über den SQL-Editor ein, Anleitung im Bericht).
 
 Geheimnisse: Die Edge Functions brauchen neben den von Supabase gesetzten Schlüsseln die Umgebungsvariable `LEMURI_KIND_GEHEIMNIS` (Zufallswert, mindestens 32 Zeichen). Jo hinterlegt sie im Supabase-Dashboard unter Edge Functions → Secrets; sie steht nie im Repository und nie im Chat.
 
