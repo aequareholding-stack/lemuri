@@ -30,3 +30,6 @@ alter default privileges for role postgres in schema public revoke all on functi
 -- Sie prüfen nur Zeilen von kind_profil, die der Aufrufer ohnehin sehen darf.
 alter function public.ist_kind(uuid) security invoker;
 alter function public.ist_eltern_von(uuid) security invoker;
+
+-- Profile legt und löscht nur der Server (Edge Functions kind-profil-anlegen, kind-profil-loeschen)
+revoke insert, delete on public.kind_profil from authenticated;
