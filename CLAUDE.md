@@ -22,6 +22,10 @@ Danach:
 
 Ist ein Auftrag nicht fertig, steht ganz oben, was fehlt und was der Operator tun muss.
 
+## Jede Nachricht beginnt mit Datum und Uhrzeit (Pflicht)
+
+Nicht nur der Bericht: Jede Nachricht an den Operator, auch ein kurzer Zwischenstand oder eine Meldung nach einem Ereignis, beginnt in der ersten Zeile mit `Datum und Uhrzeit: TT.MM.JJJJ, HH:MM Uhr (deutsche Zeit)`. Die Zeit kommt aus der Uhr der Umgebung (`TZ=Europe/Berlin date`), nie geschätzt.
+
 ## Arbeitsweise
 
 - Ist eine Auftragsnummer schon belegt (Zweig, Pull Request oder Eintrag in `docs/plan.md`), sofort melden und nicht bauen.
