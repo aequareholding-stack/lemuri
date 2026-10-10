@@ -2,6 +2,11 @@
 -- Gespräche und Aufgaben: 90 Tage. Lernsitzungen: 7 Tage. Lernzeit_tag: 12 Monate.
 -- E-Mail-Prüfsumme gegen eine zweite Testphase: 24 Monate.
 -- Keine automatische Löschung von Konten oder Profilen.
+--
+-- Korrektur vom 10.10.2026: Sitzungen werden vor dem Einfügen je Kind und Tag
+-- zusammengefasst. Vorher brach der Lauf ab, sobald ein Kind zwei beendete
+-- Sitzungen an einem Tag hatte ("ON CONFLICT DO UPDATE command cannot affect
+-- row a second time"), und es wurde gar nichts mehr gelöscht.
 
 create or replace function public.loeschlauf()
 returns table (tabelle text, geloescht bigint)
@@ -25,14 +30,20 @@ begin
   get diagnostics n = row_count;
   tabelle := 'aufgabe'; geloescht := n; return next;
 
-  -- Lernsitzungen erst in Tagessummen übernehmen, dann löschen
+  -- Lernsitzungen in Tagessummen übernehmen: erst je Kind und Tag zusammenfassen,
+  -- dann einfügen. So trifft jede Zeile des Einfügens einen anderen Schlüssel.
+  -- Die Zeitzone ist je Kind eindeutig: elterneinstellungen hat kind_id als Primärschlüssel.
   insert into public.lernzeit_tag (kind_id, datum, minuten)
-  select s.kind_id,
-         (s.gestartet_am at time zone coalesce(e.zeitzone, 'Europe/Berlin'))::date,
-         greatest(1, round(extract(epoch from (s.beendet_am - s.gestartet_am)) / 60))::int
-  from public.lernsitzung s
-  left join public.elterneinstellungen e on e.kind_id = s.kind_id
-  where s.beendet_am is not null and s.beendet_am < now() - interval '7 days'
+  select t.kind_id, t.datum, sum(t.minuten)::int
+  from (
+    select s.kind_id,
+           (s.gestartet_am at time zone coalesce(e.zeitzone, 'Europe/Berlin'))::date as datum,
+           greatest(1, round(extract(epoch from (s.beendet_am - s.gestartet_am)) / 60))::int as minuten
+    from public.lernsitzung s
+    left join public.elterneinstellungen e on e.kind_id = s.kind_id
+    where s.beendet_am is not null and s.beendet_am < now() - interval '7 days'
+  ) t
+  group by t.kind_id, t.datum
   on conflict (kind_id, datum) do update set minuten = public.lernzeit_tag.minuten + excluded.minuten;
 
   delete from public.lernsitzung
