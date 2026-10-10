@@ -261,8 +261,42 @@ export async function schutzTests(client) {
   // Löschlauf: altes Gespräch verschwindet, Themenstand bleibt
   await alsServer(client, () => client.query(`update gespraech set gestartet_am = now() - interval '91 days', beendet_am = now() - interval '91 days' where id = $1`, [gespraechId]));
   await alsServer(client, () => client.query('select * from loeschlauf()'));
-  pruefe('Löschlauf entfernt Gespräche nach 90 Tagen', (await client.query('select count(*)::int as n from gespraech_nachricht')).rows[0].n === 0);
+  pruefe('Löschlauf entfernt Gespräche nach 90 Tagen', (await client.query('select count(*)::int as n from gespraech where id = $1', [gespraechId])).rows[0].n === 0);
+  pruefe('Mit dem Gespräch verschwinden seine Nachrichten und Hinweise (on delete cascade)',
+    (await client.query('select count(*)::int as n from gespraech_nachricht where gespraech_id = $1', [gespraechId])).rows[0].n === 0
+    && (await client.query('select count(*)::int as n from hinweis where gespraech_id = $1', [gespraechId])).rows[0].n === 0);
   pruefe('Themenstand bleibt nach dem Löschlauf', (await client.query('select count(*)::int as n from kind_thema_stand')).rows[0].n === 1);
+
+  // Lernsitzungen: drei beendete Sitzungen eines Kindes an einem Tag (vor 8 Tagen),
+  // 20 + 30 + 10 Minuten, dazu ein altes Gespräch. Zweimal laufen lassen: kein Abbruch,
+  // Minuten einmal summiert, Sitzungen weg.
+  const vor8Tagen = (uhr) => `(current_date - 8) + time '${uhr}'`;
+  await alsServer(client, async () => {
+    await client.query(`delete from lernzeit_tag where kind_id = $1`, [ben.kindId]);
+    await client.query(`insert into lernsitzung (kind_id, gestartet_am, beendet_am) values
+      ($1, ${vor8Tagen('09:00')}, ${vor8Tagen('09:20')}),
+      ($1, ${vor8Tagen('11:00')}, ${vor8Tagen('11:30')}),
+      ($1, ${vor8Tagen('16:00')}, ${vor8Tagen('16:10')}),
+      ($1, now() - interval '1 hour', now())`, [ben.kindId]);
+    const alteAufgabe = (await client.query(`insert into aufgabe (kind_id, fach, aufgabentext, eingabeart, erstellt_am) values ($1, 'mathe', 'alt', 'text', now() - interval '100 days') returning id`, [ben.kindId])).rows[0].id;
+    await client.query(`insert into gespraech (aufgabe_id, kind_id, gestartet_am, beendet_am) values ($1, $2, now() - interval '100 days', now() - interval '99 days')`, [alteAufgabe, ben.kindId]);
+  });
+  let lauf1 = null, lauf2 = null;
+  try {
+    lauf1 = await alsServer(client, async () => (await client.query('select * from loeschlauf()')).rows);
+    lauf2 = await alsServer(client, async () => (await client.query('select * from loeschlauf()')).rows);
+  } catch (e) {
+    pruefe('Löschlauf bricht bei mehreren Sitzungen am Tag nicht ab', false, `(${e.message})`);
+  }
+  if (lauf1 && lauf2) {
+    pruefe('Löschlauf bricht bei mehreren Sitzungen am Tag nicht ab', true);
+    const tag = (await client.query('select minuten from lernzeit_tag where kind_id = $1 and datum = current_date - 8', [ben.kindId])).rows;
+    pruefe('Minuten des Tages korrekt summiert (20 + 30 + 10 = 60), auch nach zweitem Lauf', tag.length === 1 && tag[0].minuten === 60, JSON.stringify(tag));
+    pruefe('Alte Sitzungen sind gelöscht, die heutige bleibt', (await client.query('select count(*)::int as n from lernsitzung where kind_id = $1', [ben.kindId])).rows[0].n === 1);
+    pruefe('Gespräch älter als 90 Tage ist gelöscht', (await client.query('select count(*)::int as n from gespraech where kind_id = $1', [ben.kindId])).rows[0].n === 0);
+    pruefe('Erster Lauf meldet 3 gelöschte Sitzungen und 1 Gespräch', lauf1.some((z) => z.tabelle === 'lernsitzung' && Number(z.geloescht) === 3) && lauf1.some((z) => z.tabelle === 'gespraech' && Number(z.geloescht) === 1), JSON.stringify(lauf1));
+    pruefe('Zweiter Lauf löscht nichts mehr', lauf2.every((z) => Number(z.geloescht) === 0), JSON.stringify(lauf2));
+  }
 
   // E-Mail-Prüfsumme: nur Hash, kein Klartext; nach 24 Monaten gelöscht, vorher nicht
   const hashZeilen = (await client.query('select email_hash from testphase_verbraucht')).rows;
